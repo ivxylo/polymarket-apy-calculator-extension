@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Polymarket APY Calculator",
+  "version": "1.0.0",
+  "description": "Calculates true compounding APY for Yes/No shares on Polymarket event pages.",
+  "icons": {
+    "128": "logo.png"
+  },
+  "action": {
+    "default_icon": "logo.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.polymarket.com/*"],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "host_permissions": [
+    "*://*.polymarket.com/*",
+    "https://gamma-api.polymarket.com/*"
+  ]
+}
