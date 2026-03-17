@@ -683,7 +683,7 @@ const PortfolioInjector = (() => {
     for (const el of all) {
       if (el.children.length > 0) continue; // skip non-leaf nodes
       const text = (el.innerText || el.textContent || '').trim();
-      if (/^\d+[¢%]$|^\$0\.\d+$|^0\.\d+$/.test(text)) return el;
+      if (/^\d+(\.\d+)?[¢%]$|^\$[\d.]+$|^0\.\d+$/.test(text)) return el;
     }
     return null;
   }
