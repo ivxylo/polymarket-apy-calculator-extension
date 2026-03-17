@@ -15,9 +15,10 @@ A Chrome extension that adds APY calculations to Polymarket — both on event pa
 - Settlement date can be overridden per sub-market to model different scenarios
 
 **Portfolio page** (`/portfolio`)
-- Inlines a compact APY badge next to each open position showing the annualised yield at your average entry price
+- Inlines a compact APY badge next to each open position showing the annualised yield at the **current live market price** (fetched from the Gamma API)
 - Toggle on/off with the **APY: Off / APY: On** pill button in the bottom-right corner (off by default; preference is saved)
 - Click the days count on any badge to edit the settlement date inline
+- An **Avg APY** pill (just above the toggle) shows the dollar-weighted average APY across all open positions; click it to open a breakdown popup
 
 ## Installation
 
@@ -44,8 +45,15 @@ A Chrome extension that adds APY calculations to Polymarket — both on event pa
 
 1. Navigate to `polymarket.com/portfolio`
 2. Click the **APY: Off** pill in the bottom-right corner to enable badges
-3. Each open position row shows a teal APY badge with the annualised yield and days to settlement
+3. Each open position row shows a teal APY badge with the annualised yield (based on the current live price) and days to settlement
 4. Click the days count on any badge to open an inline date picker and model a different settlement date
+5. The **Avg APY** pill (just above the toggle) shows the dollar-weighted average APY across all included positions; individual APYs are capped at 500% before weighting to prevent outliers from skewing the result
+6. Click the **Avg APY** pill to open a market breakdown popup:
+   - Markets are listed sorted by position size (largest first)
+   - Each row shows the market name, APY, position value, and its weight in the average
+   - Use the checkboxes to include or exclude individual markets from the calculation; the counter and weighted average update instantly
+   - A sticky footer always shows the total selected value and the resulting weighted average APY
+   - Hover over any truncated market name to see the full text
 
 All in-memory state (popup position, dismissed sub-markets) resets on navigation or page refresh. The portfolio badge toggle is saved across sessions.
 

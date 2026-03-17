@@ -12,7 +12,7 @@ A Manifest V3 Chrome extension that adds APY calculations to Polymarket. On **ev
 |---|---|
 | `manifest.json` | MV3 manifest — declares content script, CSS, and host permissions |
 | `content.js` | All extension logic, organised into five modules |
-| `styles.css` | Scoped styles: `#apy-ext-container` for the popup; `.apy-portfolio-*` for portfolio badges |
+| `styles.css` | Scoped styles: `#apy-ext-container` for the event popup; `.apy-portfolio-*` for portfolio badges, toggle, summary pill, and breakdown popup |
 
 No background service worker. No `chrome.storage`. State is in-memory (resets on navigation) except the portfolio badge toggle which uses `localStorage`.
 
@@ -73,19 +73,39 @@ Manages all DOM interaction for event pages. Maintains two pieces of in-memory s
 - Date input is pre-filled from the market's resolved `endDate`; changing it recalculates APY in-place without re-fetching
 
 ### `PortfolioInjector`
-Handles the `/portfolio` page. Inlines a compact APY badge to the right of each open position row.
+Handles the `/portfolio` page. Inlines a compact APY badge to the right of each open position row, and shows a weighted average APY summary above the toggle.
 
-**Toggle**: a fixed pill button (bottom-right corner) labelled "APY: Off" / "APY: On". State persists in `localStorage` (`apy-ext-portfolio-enabled`). Badges are off by default.
+**State**:
+- `_cache` — `Map<slug, Promise<marketData>>`: deduplicates concurrent API fetches for the same event slug
+- `_injected` — `WeakSet`: tracks already-processed row nodes; auto-GCs when React unmounts rows
+- `_results` — `Map<key, {apy, days, value, label, outcome}>`: stores resolved badge data keyed by `"market.question:outcome"`, used to compute the weighted average and populate the breakdown popup. Keying on `market.question` (not slug) prevents collisions when the portfolio contains multiple sub-markets from the same event.
+- `_excluded` — `Set<key>`: keys manually unchecked in the breakdown popup; excluded from the weighted average
+
+**Toggle**: a fixed pill button (bottom-right corner) labelled "APY: Off" / "APY: On". State persists in `localStorage` (`apy-ext-portfolio-enabled`). Badges are off by default. Disabling hides badges and removes the summary pill and breakdown popup.
 
 **Row discovery** (`findRows`): tries a priority-ordered list of selectors; returns the first set of elements that contain an `/event/` link. Primary selector is `[class*="lg:min-h-[64px]"]` which matches Polymarket's position card containers across all background-colour variants.
 
 **Sub-market matching** (`findBestMarket`): matches the API sub-market to the row by scoring how well each market's `question` string matches the row's visible title text (longest common prefix). Falls back to outcome-label matching, then first market.
 
-**Price detection** (`findPriceEl`): finds a leaf element whose text matches a price pattern (`18¢`, `65%`, `$0.65`, `0.65`).
+**Price source**: the badge uses the **current live market price** from the API's `outcomePrices` array for the matched sub-market, not the DOM-scraped average entry price. The correct outcome index is resolved via `detectOutcome` (searches row text for "Yes"/"No"); falls back to index 0.
 
-**Badge** (`injectBadge`): appended to the row element. States: loading (pulsing), error (`—`), settled (italic), default (teal APY + days). The days text is clickable — clicking it replaces it with an inline `<input type="date">` for manual override; APY recalculates on change.
+**Badge** (`injectBadge`): appended to the row element. States: loading (pulsing), error (`—`), settled (italic), default (teal APY + days). The days text is clickable — clicking it replaces it with an inline `<input type="date">` for manual override; APY recalculates on change. On successful resolution the result is stored in `_results` and `updateSummary()` is called.
 
-**Deduplication**: a `WeakSet` tracks already-processed row nodes. A `Map` cache deduplicates concurrent API fetches for the same slug. Both are reset on navigation; the `WeakSet` auto-GCs when React unmounts and remounts rows.
+**Position value** (`parsePositionValue`): scans leaf elements in the row for bare `$N` amounts (regex excludes `+$N`/`-$N` P&L values). Returns the last matched amount as the current position dollar value, used for weighting.
+
+**Summary pill** (`updateSummary`): a fixed pill button rendered just above the toggle (`bottom: 64px, right: 24px`). Shows the dollar-weighted average APY across all active, included positions. Individual APYs are capped at 500% (5.0 as a decimal) before weighting to prevent low-probability or near-expiry outliers from dominating the result. Clicking the pill toggles the breakdown popup.
+
+**Breakdown popup** (`renderSummaryPopup` / `refreshPopupState`):
+- Lists all positions in `_results`, sorted by position value descending (nulls last)
+- Settled or invalid positions (days ≤ 0, APY null) are shown greyed out with a disabled checkbox
+- Column headers: Market · APY · Value · Weight (sticky within the scroll area)
+- Each row shows: checkbox, market name (with custom truncation tooltip on hover), capped APY, position value, and weight % of total selected value
+- A counter badge in the header shows `selected / total active`
+- A sticky footer always shows total selected value and weighted average APY
+- The scrollable body has a max-height of ~12 rows (~444px); beyond that it scrolls
+- Checkbox toggles update the counter, weight column, and footer in-place (`refreshPopupState`) without re-rendering the full popup, preserving scroll position
+- A full re-render is triggered only when `_results.size` changes (new badge resolved)
+- Closes on outside click or the ✕ button
 
 ### `SPAObserver`
 - `MutationObserver` on `document.body` watching for DOM changes
@@ -114,12 +134,15 @@ Handles the `/portfolio` page. Inlines a compact APY badge to the right of each 
 
 | Action | Result |
 |---|---|
-| "APY: Off" pill (bottom-right) | Enables badges; rescans all visible rows; preference saved to `localStorage` |
-| "APY: On" pill | Disables and hides all badges |
+| "APY: Off" pill (bottom-right) | Enables badges; rescans all visible rows; shows Avg APY pill; preference saved to `localStorage` |
+| "APY: On" pill | Disables and hides all badges; removes Avg APY pill and breakdown popup |
 | Click days text on a badge | Opens inline date input for that badge |
 | Change inline date | Recalculates APY instantly for that position |
-| Scroll (lazy-loaded rows) | `MutationObserver` triggers `scan()`; new rows get badges automatically |
-| Navigate away and back | Toggle button re-injected; cache cleared; badges re-injected if enabled |
+| Click Avg APY pill | Toggles the market breakdown popup open/closed |
+| Uncheck a market in popup | Excludes it from the weighted average; counter, weights, and footer update in-place |
+| Recheck a market in popup | Re-includes it; counter, weights, and footer update in-place |
+| Scroll (lazy-loaded rows) | `MutationObserver` triggers `scan()`; new rows get badges; popup gains new row if open |
+| Navigate away and back | Toggle button re-injected; all caches and results cleared; badges re-injected if enabled |
 
 ---
 
@@ -140,4 +163,4 @@ No `permissions` array needed — no storage, tabs, or other browser APIs used.
 - DOM scraping fallback (event pages only) is best-effort and may return no data on some page layouts
 - Date parsing from question text covers `Month DD` and `Month DD, YYYY` patterns; unusual phrasings will fall back to the event-level end date
 - Sub-market ordering and trash state are in-memory only — not persisted across page refreshes
-- Portfolio badge toggle preference is the only state persisted to `localStorage`
+- Portfolio badge toggle preference is the only state persisted to `localStorage`; `_excluded` selections are in-memory only and reset on navigation

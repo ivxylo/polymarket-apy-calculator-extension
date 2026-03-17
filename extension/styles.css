@@ -414,6 +414,356 @@
   }
 }
 
+/* ── Truncation tooltip ────────────────────────────────────── */
+#apy-ext-tooltip {
+  display: none;
+  position: fixed;
+  z-index: 2147483647;
+  background: #1a202c;
+  color: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 5px 9px;
+  border-radius: 5px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  pointer-events: none;
+  max-width: 280px;
+  word-break: break-word;
+}
+
+/* ── Portfolio weighted average APY summary pill ───────────── */
+.apy-portfolio-summary {
+  position: fixed;
+  bottom: 64px;
+  right: 24px;
+  z-index: 2147483647;
+  padding: 5px 12px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: #718096;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.apy-portfolio-summary:hover {
+  border-color: #00c2a0;
+  color: #00a98c;
+}
+
+@media (prefers-color-scheme: dark) {
+  .apy-portfolio-summary {
+    background: #1e2535;
+    border-color: #2d3748;
+    color: #718096;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  }
+
+  .apy-portfolio-summary:hover {
+    border-color: #00c2a0;
+    color: #00c2a0;
+  }
+}
+
+/* ── Portfolio summary breakdown popup ─────────────────────── */
+.apy-portfolio-summary-popup {
+  position: fixed;
+  bottom: 112px;
+  right: 24px;
+  z-index: 2147483647;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+}
+
+.apy-portfolio-summary-popup__body {
+  overflow-y: auto;
+  /* ~12 rows × 37px each */
+  max-height: 444px;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e0 transparent;
+}
+
+.apy-portfolio-summary-popup__body::-webkit-scrollbar {
+  width: 4px;
+}
+
+.apy-portfolio-summary-popup__body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.apy-portfolio-summary-popup__body::-webkit-scrollbar-thumb {
+  background: #cbd5e0;
+  border-radius: 4px;
+}
+
+.apy-portfolio-summary-popup__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 14px;
+  border-top: 1px solid #e2e8f0;
+  background: #f7fafc;
+  border-radius: 0 0 12px 12px;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.apy-portfolio-summary-popup__footer-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #a0aec0;
+  white-space: nowrap;
+}
+
+.apy-portfolio-summary-popup__footer-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: #2d3748;
+  white-space: nowrap;
+}
+
+.apy-portfolio-summary-popup__footer-apy {
+  font-size: 13px;
+  font-weight: 700;
+  color: #00a98c;
+  white-space: nowrap;
+}
+
+.apy-portfolio-summary-popup__footer-divider {
+  width: 1px;
+  height: 20px;
+  background: #e2e8f0;
+  flex-shrink: 0;
+}
+
+.apy-portfolio-summary-popup__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px 9px;
+  border-bottom: 1px solid #e2e8f0;
+  position: sticky;
+  top: 0;
+  background: #ffffff;
+}
+
+.apy-portfolio-summary-popup__title {
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #a0aec0;
+}
+
+.apy-portfolio-summary-popup__counter {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffffff;
+  background: #00c2a0;
+  border-radius: 10px;
+  padding: 1px 7px;
+  margin-left: 6px;
+  letter-spacing: 0;
+  vertical-align: middle;
+}
+
+.apy-portfolio-summary-popup__close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #a0aec0;
+  font-size: 13px;
+  padding: 0 2px;
+  line-height: 1;
+  transition: color 0.1s;
+}
+
+.apy-portfolio-summary-popup__close:hover {
+  color: #e53e3e;
+}
+
+.apy-portfolio-summary-popup__col-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto;
+  gap: 8px;
+  padding: 5px 14px 4px;
+  position: sticky;
+  top: 0;
+  background: #f7fafc;
+  border-bottom: 1px solid #e2e8f0;
+  z-index: 1;
+}
+
+.apy-portfolio-summary-popup__col-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #a0aec0;
+  white-space: nowrap;
+}
+
+.apy-portfolio-summary-popup__col-label--right {
+  text-align: right;
+}
+
+.apy-portfolio-summary-popup__row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid #f7fafc;
+  transition: background 0.1s;
+}
+
+.apy-portfolio-summary-popup__row:last-child {
+  border-bottom: none;
+}
+
+.apy-portfolio-summary-popup__row:hover {
+  background: #f7fafc;
+}
+
+.apy-portfolio-summary-popup__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #2d3748;
+  font-size: 12px;
+}
+
+.apy-portfolio-summary-popup__apy {
+  font-weight: 700;
+  color: #00a98c;
+  font-size: 13px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.apy-portfolio-summary-popup__value {
+  color: #a0aec0;
+  font-size: 12px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.apy-portfolio-summary-popup__weight {
+  color: #718096;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: right;
+  white-space: nowrap;
+  min-width: 36px;
+}
+
+.apy-portfolio-summary-popup__row--settled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.apy-portfolio-summary-popup__row--settled:hover {
+  background: transparent;
+}
+
+.apy-portfolio-summary-popup__apy--settled {
+  font-weight: 400;
+  color: #a0aec0;
+  font-style: italic;
+}
+
+.apy-portfolio-summary-popup__empty {
+  padding: 14px;
+  text-align: center;
+  color: #a0aec0;
+  font-size: 12px;
+  margin: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .apy-portfolio-summary-popup {
+    background: #1e2535;
+    border-color: #2d3748;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  }
+
+  .apy-portfolio-summary-popup__body {
+    scrollbar-color: #4a5568 transparent;
+  }
+
+  .apy-portfolio-summary-popup__body::-webkit-scrollbar-thumb {
+    background: #4a5568;
+  }
+
+  .apy-portfolio-summary-popup__header {
+    background: #1e2535;
+    border-bottom-color: #2d3748;
+  }
+
+  .apy-portfolio-summary-popup__col-header {
+    background: #161e2e;
+    border-bottom-color: #2d3748;
+  }
+
+  .apy-portfolio-summary-popup__weight {
+    color: #4a5568;
+  }
+
+  .apy-portfolio-summary-popup__row {
+    border-bottom-color: #2d3748;
+  }
+
+  .apy-portfolio-summary-popup__row:hover {
+    background: #2d3748;
+  }
+
+  .apy-portfolio-summary-popup__name {
+    color: #e2e8f0;
+  }
+
+  .apy-portfolio-summary-popup__apy {
+    color: #00c2a0;
+  }
+
+  .apy-portfolio-summary-popup__value {
+    color: #4a5568;
+  }
+
+  .apy-portfolio-summary-popup__footer {
+    background: #161e2e;
+    border-top-color: #2d3748;
+  }
+
+  .apy-portfolio-summary-popup__footer-value {
+    color: #e2e8f0;
+  }
+
+  .apy-portfolio-summary-popup__footer-apy {
+    color: #00c2a0;
+  }
+
+  .apy-portfolio-summary-popup__footer-divider {
+    background: #2d3748;
+  }
+}
+
 /* ============================================================
    Portfolio page — inline APY badge
    ============================================================ */

@@ -621,9 +621,13 @@ const UIInjector = (() => {
 const PortfolioInjector = (() => {
   let _cache = new Map();       // slug → Promise<marketData>  (de-dupes concurrent fetches)
   const _injected = new WeakSet(); // DOM row nodes already processed
+  let _results  = new Map(); // "slug:outcome" → { apy, days, value, label, outcome }
+  let _excluded = new Set(); // keys manually excluded from the weighted average
 
   const STORAGE_KEY = 'apy-ext-portfolio-enabled';
   const TOGGLE_ID   = 'apy-ext-portfolio-toggle';
+  const SUMMARY_ID  = 'apy-ext-portfolio-summary';
+  const POPUP_ID    = 'apy-ext-portfolio-summary-popup';
 
   function isEnabled() {
     return localStorage.getItem(STORAGE_KEY) === 'true';
@@ -643,12 +647,15 @@ const PortfolioInjector = (() => {
         btn.className = 'apy-portfolio-toggle';
         btn.textContent = 'APY: Off';
         document.querySelectorAll('.apy-portfolio-badge').forEach(b => { b.style.display = 'none'; });
+        document.getElementById(SUMMARY_ID)?.remove();
+        document.getElementById(POPUP_ID)?.remove();
       } else {
         localStorage.setItem(STORAGE_KEY, 'true');
         btn.className = 'apy-portfolio-toggle apy-portfolio-toggle--on';
         btn.textContent = 'APY: On';
         document.querySelectorAll('.apy-portfolio-badge').forEach(b => { b.style.display = ''; });
         scan();
+        updateSummary();
       }
     });
 
@@ -789,6 +796,356 @@ const PortfolioInjector = (() => {
     return markets[0];
   }
 
+  /**
+   * Parses the current position dollar value from a row.
+   * Returns the last leaf-level $ amount that is not preceded by +/- (i.e. not P&L).
+   */
+  function parsePositionValue(row) {
+    const all = row.querySelectorAll('*');
+    const dollarAmounts = [];
+    for (const el of all) {
+      if (el.children.length > 0) continue;
+      const t = (el.innerText || el.textContent || '').trim();
+      if (/^\$[\d,]+(\.\d+)?$/.test(t)) {
+        dollarAmounts.push(parseFloat(t.replace(/[$,]/g, '')));
+      }
+    }
+    return dollarAmounts.length > 0 ? dollarAmounts[dollarAmounts.length - 1] : null;
+  }
+
+  /**
+   * Attaches a fast custom tooltip to an element, shown only when its text
+   * is actually clipped (scrollWidth > offsetWidth).
+   */
+  const TOOLTIP_ID = 'apy-ext-tooltip';
+  let _tooltipTimer = null;
+  function attachTruncationTooltip(el, text) {
+    el.addEventListener('mouseenter', () => {
+      _tooltipTimer = setTimeout(() => {
+        if (el.scrollWidth <= el.offsetWidth) return; // not truncated
+        let tip = document.getElementById(TOOLTIP_ID);
+        if (!tip) {
+          tip = document.createElement('div');
+          tip.id = TOOLTIP_ID;
+          tip.className = 'apy-ext-tooltip';
+          document.body.appendChild(tip);
+        }
+        tip.textContent = text;
+        const rect = el.getBoundingClientRect();
+        tip.style.left = rect.left + 'px';
+        tip.style.top  = (rect.bottom + 6) + 'px';
+        tip.style.display = 'block';
+      }, 120);
+    });
+    el.addEventListener('mouseleave', () => {
+      clearTimeout(_tooltipTimer);
+      const tip = document.getElementById(TOOLTIP_ID);
+      if (tip) tip.style.display = 'none';
+    });
+  }
+
+  /** Recomputes and renders the weighted average APY summary pill. */
+  function updateSummary() {
+    let sumWeightedAPY = 0, sumValue = 0, countNoValue = 0;
+    for (const [key, { apy, days, value }] of _results.entries()) {
+      if (days <= 0 || apy === null || _excluded.has(key)) continue;
+      if (value != null && value > 0) {
+        sumWeightedAPY += Math.min(apy, 5) * value;
+        sumValue += value;
+      } else {
+        countNoValue++;
+      }
+    }
+
+    let el = document.getElementById(SUMMARY_ID);
+    if (!el) {
+      el = document.createElement('button');
+      el.id = SUMMARY_ID;
+      el.className = 'apy-portfolio-summary';
+      el.setAttribute('aria-label', 'Show/hide APY breakdown by market');
+      el.addEventListener('click', toggleSummaryPopup);
+      document.body.appendChild(el);
+    }
+
+    if (sumValue > 0) {
+      const wavg = sumWeightedAPY / sumValue;
+      el.textContent = `Avg APY: ${(wavg * 100).toFixed(2)}%`;
+      el.title = countNoValue > 0 ? `${countNoValue} position(s) excluded (no value data)` : '';
+    } else {
+      el.textContent = 'Avg APY: —';
+      el.title = '';
+    }
+
+    // Keep popup in sync if it's already open
+    const popup = document.getElementById(POPUP_ID);
+    if (popup) {
+      // Full re-render only when a new market row needs to be added; otherwise just
+      // refresh weights and counter in-place (preserves scroll position)
+      const renderedCount = popup.querySelectorAll('[data-weight-key]').length;
+      if (renderedCount !== _results.size) {
+        renderSummaryPopup();
+      } else {
+        refreshPopupState(popup);
+      }
+    }
+  }
+
+  /**
+   * Updates the counter and weight column in an already-rendered popup without
+   * tearing it down. Called whenever a checkbox changes or the pill recalculates.
+   */
+  function refreshPopupState(popup) {
+    // Recompute stats across checked, active, valued markets
+    let totalValue = 0, sumWeightedAPY = 0;
+    for (const [key, { days, apy, value }] of _results.entries()) {
+      if (days <= 0 || apy === null || _excluded.has(key)) continue;
+      if (value != null && value > 0) {
+        totalValue += value;
+        sumWeightedAPY += Math.min(apy, 5) * value;
+      }
+    }
+
+    // Update each weight cell
+    for (const weightEl of popup.querySelectorAll('[data-weight-key]')) {
+      const entry = _results.get(weightEl.dataset.weightKey);
+      if (!entry) continue;
+      const { days, apy, value } = entry;
+      const settled = days <= 0 || apy === null;
+      const excluded = _excluded.has(weightEl.dataset.weightKey);
+      if (settled || excluded || value == null || value <= 0 || totalValue === 0) {
+        weightEl.textContent = '—';
+      } else {
+        weightEl.textContent = `${(value / totalValue * 100).toFixed(1)}%`;
+      }
+    }
+
+    // Update selected counter
+    const counterEl = popup.querySelector('.apy-portfolio-summary-popup__counter');
+    if (counterEl) {
+      const activeKeys = [..._results.entries()]
+        .filter(([, { days, apy }]) => days > 0 && apy !== null);
+      const selectedCount = activeKeys.filter(([key]) => !_excluded.has(key)).length;
+      counterEl.textContent = `${selectedCount} / ${activeKeys.length}`;
+    }
+
+    // Update footer
+    const totalValEl = popup.querySelector('.apy-portfolio-summary-popup__footer-value');
+    const apyValEl   = popup.querySelector('.apy-portfolio-summary-popup__footer-apy');
+    if (totalValEl) {
+      totalValEl.textContent = totalValue > 0
+        ? `$${totalValue.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+        : '—';
+    }
+    if (apyValEl) {
+      apyValEl.textContent = totalValue > 0
+        ? APYCalculator.formatAPY(sumWeightedAPY / totalValue, 1)
+        : '—';
+    }
+  }
+
+  /** Toggles the per-market breakdown popup open/closed. */
+  function toggleSummaryPopup() {
+    if (document.getElementById(POPUP_ID)) {
+      document.getElementById(POPUP_ID).remove();
+    } else {
+      renderSummaryPopup();
+    }
+  }
+
+  /** Renders (or re-renders) the per-market breakdown popup. */
+  function renderSummaryPopup() {
+    const existing = document.getElementById(POPUP_ID);
+    const prevScrollTop = existing
+      ? (existing.querySelector('.apy-portfolio-summary-popup__body') || existing).scrollTop
+      : 0;
+    if (existing) existing.remove();
+
+    const popup = document.createElement('div');
+    popup.id = POPUP_ID;
+    popup.className = 'apy-portfolio-summary-popup';
+
+    // Precompute total value for initial weight column
+    let totalValue = 0;
+    for (const [key, { days, apy, value }] of _results.entries()) {
+      if (days <= 0 || apy === null || _excluded.has(key)) continue;
+      if (value != null && value > 0) totalValue += value;
+    }
+
+    // Compute initial counter values
+    const activeEntries = [..._results.entries()]
+      .filter(([, { days, apy }]) => days > 0 && apy !== null);
+    const selectedCount = activeEntries.filter(([key]) => !_excluded.has(key)).length;
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'apy-portfolio-summary-popup__header';
+
+    const titleWrap = document.createElement('span');
+    titleWrap.className = 'apy-portfolio-summary-popup__title';
+    titleWrap.textContent = 'Markets in Avg APY ';
+
+    const counter = document.createElement('span');
+    counter.className = 'apy-portfolio-summary-popup__counter';
+    counter.textContent = `${selectedCount} / ${activeEntries.length}`;
+    titleWrap.appendChild(counter);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'apy-portfolio-summary-popup__close';
+    closeBtn.textContent = '✕';
+    closeBtn.setAttribute('aria-label', 'Close market breakdown');
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.getElementById(TOOLTIP_ID)?.remove();
+      popup.remove();
+    });
+
+    header.appendChild(titleWrap);
+    header.appendChild(closeBtn);
+    popup.appendChild(header);
+
+    // Scrollable body — rows go here
+    const body = document.createElement('div');
+    body.className = 'apy-portfolio-summary-popup__body';
+    popup.appendChild(body);
+
+    // Column headers (sticky within body scroll)
+    const colHeader = document.createElement('div');
+    colHeader.className = 'apy-portfolio-summary-popup__col-header';
+    [null, 'Market', 'APY', 'Value', 'Weight'].forEach((text, i) => {
+      const el = document.createElement('span');
+      if (text) {
+        el.className = 'apy-portfolio-summary-popup__col-label' + (i > 1 ? ' apy-portfolio-summary-popup__col-label--right' : '');
+        el.textContent = text;
+      }
+      colHeader.appendChild(el);
+    });
+    body.appendChild(colHeader);
+
+    // Per-market rows sorted by position value descending (nulls last)
+    const sorted = [..._results.entries()].sort(([, a], [, b]) => {
+      if (a.value == null && b.value == null) return 0;
+      if (a.value == null) return 1;
+      if (b.value == null) return -1;
+      return b.value - a.value;
+    });
+
+    if (sorted.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'apy-portfolio-summary-popup__empty';
+      empty.textContent = 'No markets loaded yet.';
+      body.appendChild(empty);
+    }
+
+    for (const [key, { apy, days, value, label, outcome }] of sorted) {
+      const settled = days <= 0 || apy === null;
+      const excluded = _excluded.has(key);
+
+      const row = document.createElement('label');
+      row.className = 'apy-portfolio-summary-popup__row' + (settled ? ' apy-portfolio-summary-popup__row--settled' : '');
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.disabled = settled;
+      checkbox.checked = !settled && !excluded;
+      if (!settled) {
+        checkbox.addEventListener('change', () => {
+          if (checkbox.checked) _excluded.delete(key);
+          else _excluded.add(key);
+          updateSummary();
+        });
+      }
+
+      const nameEl = document.createElement('span');
+      nameEl.className = 'apy-portfolio-summary-popup__name';
+      const fullName = label + (outcome ? ` (${outcome})` : '');
+      nameEl.textContent = fullName;
+      attachTruncationTooltip(nameEl, fullName);
+
+      const apyEl = document.createElement('span');
+      apyEl.className = 'apy-portfolio-summary-popup__apy';
+      if (settled) {
+        apyEl.textContent = days <= 0 ? 'Settled' : 'N/A';
+        apyEl.classList.add('apy-portfolio-summary-popup__apy--settled');
+      } else {
+        const cappedAPY = Math.min(apy, 5);
+        apyEl.textContent = APYCalculator.formatAPY(cappedAPY, days);
+        if (apy > 5) apyEl.title = `Capped from ${APYCalculator.formatAPY(apy, days)}`;
+      }
+
+      const valueEl = document.createElement('span');
+      valueEl.className = 'apy-portfolio-summary-popup__value';
+      valueEl.textContent = value != null
+        ? `$${value.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+        : '—';
+
+      const weightEl = document.createElement('span');
+      weightEl.className = 'apy-portfolio-summary-popup__weight';
+      weightEl.dataset.weightKey = key;
+      if (settled || excluded || value == null || value <= 0 || totalValue === 0) {
+        weightEl.textContent = '—';
+      } else {
+        weightEl.textContent = `${(value / totalValue * 100).toFixed(1)}%`;
+      }
+
+      row.appendChild(checkbox);
+      row.appendChild(nameEl);
+      row.appendChild(apyEl);
+      row.appendChild(valueEl);
+      row.appendChild(weightEl);
+      body.appendChild(row);
+    }
+
+    // Footer — sticky at bottom, always visible
+    const footer = document.createElement('div');
+    footer.className = 'apy-portfolio-summary-popup__footer';
+
+    const totalSide = document.createElement('div');
+    totalSide.style.cssText = 'display:flex;flex-direction:column;gap:1px';
+    const totalLabel = document.createElement('span');
+    totalLabel.className = 'apy-portfolio-summary-popup__footer-label';
+    totalLabel.textContent = 'Selected value';
+    const totalVal = document.createElement('span');
+    totalVal.className = 'apy-portfolio-summary-popup__footer-value';
+    totalSide.appendChild(totalLabel);
+    totalSide.appendChild(totalVal);
+
+    const divider = document.createElement('div');
+    divider.className = 'apy-portfolio-summary-popup__footer-divider';
+
+    const apySide = document.createElement('div');
+    apySide.style.cssText = 'display:flex;flex-direction:column;gap:1px;text-align:right';
+    const apyLabel = document.createElement('span');
+    apyLabel.className = 'apy-portfolio-summary-popup__footer-label';
+    apyLabel.textContent = 'Weighted avg APY';
+    const apyVal = document.createElement('span');
+    apyVal.className = 'apy-portfolio-summary-popup__footer-apy';
+    apySide.appendChild(apyLabel);
+    apySide.appendChild(apyVal);
+
+    footer.appendChild(totalSide);
+    footer.appendChild(divider);
+    footer.appendChild(apySide);
+    popup.appendChild(footer);
+
+    // Populate footer with initial values
+    refreshPopupState(popup);
+
+    document.body.appendChild(popup);
+    body.scrollTop = prevScrollTop;
+
+    // Close on outside click (defer so this click doesn't immediately close)
+    setTimeout(() => {
+      document.addEventListener('click', function handler(e) {
+        const pill = document.getElementById(SUMMARY_ID);
+        if (!popup.contains(e.target) && e.target !== pill) {
+          document.getElementById(TOOLTIP_ID)?.remove();
+          popup.remove();
+          document.removeEventListener('click', handler);
+        }
+      });
+    }, 0);
+  }
+
   /** YYYY-MM-DD string from a Date (local time, matching <input type="date">) */
   function toLocalDateString(date) {
     const d = new Date(date);
@@ -876,12 +1233,6 @@ const PortfolioInjector = (() => {
 
   /** Injects a badge into a row and populates it asynchronously. */
   async function injectBadge(row, slug) {
-    const priceEl = findPriceEl(row);
-    if (!priceEl) return;
-
-    const price = parsePrice(priceEl.innerText || priceEl.textContent);
-    if (price === null) return;
-
     const badge = createBadge(slug);
 
     // Wrap in <td> if row children are table cells
@@ -895,6 +1246,8 @@ const PortfolioInjector = (() => {
       row.appendChild(badge);
     }
 
+    const outcomeLabel = detectOutcome(row);
+
     try {
       if (!_cache.has(slug)) {
         _cache.set(slug, MarketDataFetcher.fetchBySlug(slug));
@@ -902,8 +1255,7 @@ const PortfolioInjector = (() => {
       const marketData = await _cache.get(slug);
 
       // Match sub-market by row title first, then outcome label
-      const titleHint   = extractRowTitle(row);
-      const outcomeLabel = detectOutcome(row);
+      const titleHint = extractRowTitle(row);
       const market = findBestMarket(marketData.markets, titleHint, outcomeLabel);
 
       const endDate = (market && market.endDate) || marketData.endDate;
@@ -912,9 +1264,31 @@ const PortfolioInjector = (() => {
         return;
       }
 
+      // Use API current price instead of DOM-scraped avg entry price
+      const prices   = JSON.parse((market && market.outcomePrices) || '[]').map(Number);
+      const outcomes = JSON.parse((market && market.outcomes) || '["Yes","No"]');
+      if (prices.length === 0) {
+        setBadgeError(badge, 'No price data');
+        return;
+      }
+      const outcomeIdx = outcomeLabel
+        ? outcomes.findIndex(o => o.toLowerCase() === outcomeLabel.toLowerCase())
+        : -1;
+      const currentPrice = prices[outcomeIdx >= 0 ? outcomeIdx : 0];
+
       const days = APYCalculator.daysUntil(endDate);
-      const apy  = APYCalculator.calculateAPY(price, days);
-      setBadgeValue(badge, apy, days, endDate, price);
+      const apy  = APYCalculator.calculateAPY(currentPrice, days);
+      setBadgeValue(badge, apy, days, endDate, currentPrice);
+
+      // Store result for weighted average summary.
+      // Key on market.question (unique per sub-market) to avoid collisions when
+      // multiple positions share the same event slug with undetected outcomes.
+      const value = parsePositionValue(row);
+      const question = (market && market.question) || null;
+      const label = question || slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      const key = `${question || slug}:${outcomeLabel || 'unknown'}`;
+      _results.set(key, { apy, days, value, label, outcome: outcomeLabel });
+      updateSummary();
     } catch (err) {
       setBadgeError(badge, err.message || 'Failed to load market data');
     }
@@ -933,9 +1307,13 @@ const PortfolioInjector = (() => {
     }
   }
 
-  /** Clears the fetch cache and removes the toggle button. */
+  /** Clears the fetch cache, results, summary and removes the toggle button. */
   function reset() {
     _cache = new Map();
+    _results = new Map();
+    _excluded = new Set();
+    document.getElementById(POPUP_ID)?.remove();
+    document.getElementById(SUMMARY_ID)?.remove();
     const toggle = document.getElementById(TOGGLE_ID);
     if (toggle) toggle.remove();
   }
