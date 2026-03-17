@@ -330,8 +330,8 @@ const UIInjector = (() => {
     const container = document.getElementById(CONTAINER_ID);
     if (!container) return;
 
-    // Remove any existing results card
-    const existing = container.querySelector('#apy-ext-results');
+    // Remove any existing results card (appended to body, not container)
+    const existing = document.getElementById('apy-ext-results');
     if (existing) existing.remove();
 
     const card = document.createElement('div');
@@ -376,11 +376,16 @@ const UIInjector = (() => {
       return a.endDate - b.endDate;
     });
 
+    // Scrollable body — everything below the header
+    const scrollBody = document.createElement('div');
+    scrollBody.className = 'apy-ext-scroll-body';
+    card.appendChild(scrollBody);
+
     if (markets.length === 0) {
       const msg = document.createElement('p');
       msg.className = 'apy-ext-no-data';
       msg.textContent = 'No market data available.';
-      card.appendChild(msg);
+      scrollBody.appendChild(msg);
     }
 
     const fallbackDate = marketData.endDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
@@ -449,7 +454,7 @@ const UIInjector = (() => {
       grid.className = 'apy-ext-grid';
       section.appendChild(grid);
 
-      card.appendChild(section);
+      scrollBody.appendChild(section);
 
       // Render initial values, then re-render on date change
       renderMarketAPY(grid, prices, outcomes, dateInput.value);
@@ -458,7 +463,8 @@ const UIInjector = (() => {
       });
     });
 
-    container.appendChild(card);
+    // Append to body so the card is never trapped inside a stacking context
+    document.body.appendChild(card);
   }
 
   /**

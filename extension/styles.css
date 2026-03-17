@@ -45,83 +45,130 @@
 }
 
 /* ── Results card — fixed floating popup ───────────────────── */
-#apy-ext-container #apy-ext-results {
+#apy-ext-results {
   position: fixed;
   z-index: 2147483647; /* top of stacking context */
-  padding: 12px 14px;
   background: #ffffff;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
   width: 260px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #1a1a2e;
   /* top/right set dynamically by makeDraggable */
+}
+
+#apy-ext-results .apy-ext-scroll-body {
+  padding: 0 14px 12px;
+  overflow-y: auto;
+  flex: 1;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e0 transparent;
+}
+
+#apy-ext-results .apy-ext-scroll-body::-webkit-scrollbar {
+  width: 4px;
+}
+
+#apy-ext-results .apy-ext-scroll-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#apy-ext-results .apy-ext-scroll-body::-webkit-scrollbar-thumb {
+  background: #cbd5e0;
+  border-radius: 4px;
+}
+
+#apy-ext-results .apy-ext-scroll-body::-webkit-scrollbar-thumb:hover {
+  background: #a0aec0;
+}
+
+@media (prefers-color-scheme: dark) {
+  #apy-ext-results .apy-ext-scroll-body {
+    scrollbar-color: #4a5568 transparent;
+  }
+
+  #apy-ext-results .apy-ext-scroll-body::-webkit-scrollbar-thumb {
+    background: #4a5568;
+  }
+
+  #apy-ext-results .apy-ext-scroll-body::-webkit-scrollbar-thumb:hover {
+    background: #718096;
+  }
 }
 
 /* Dark-mode aware */
 @media (prefers-color-scheme: dark) {
-  #apy-ext-container {
+  #apy-ext-container,
+  #apy-ext-results {
     color: #e2e8f0;
   }
 
-  #apy-ext-container #apy-ext-results {
+  #apy-ext-results {
     background: #1e2535;
     border-color: #2d3748;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
   }
 
-  #apy-ext-container .apy-ext-date-row label {
+  #apy-ext-results .apy-ext-date-row label {
     color: #a0aec0;
   }
 
-  #apy-ext-container .apy-ext-date-row input[type="date"] {
+  #apy-ext-results .apy-ext-date-row input[type="date"] {
     background: #2d3748;
     border-color: #4a5568;
     color: #e2e8f0;
     color-scheme: dark;
   }
 
-  #apy-ext-container .apy-ext-price {
+  #apy-ext-results .apy-ext-price {
     color: #a0aec0;
   }
 
-  #apy-ext-container .apy-ext-days {
+  #apy-ext-results .apy-ext-days {
     color: #718096;
   }
 
-  #apy-ext-container .apy-ext-summary {
+  #apy-ext-results .apy-ext-summary {
     color: #718096;
   }
 }
 
 /* ── Card header — drag handle ─────────────────────────────── */
-#apy-ext-container .apy-ext-header {
+#apy-ext-results .apy-ext-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  padding: 12px 14px 10px;
+  flex-shrink: 0;
   cursor: grab;
   user-select: none;
 }
 
-#apy-ext-container .apy-ext-header:active {
+#apy-ext-results .apy-ext-header:active {
   cursor: grabbing;
 }
 
-#apy-ext-container .apy-ext-title {
+#apy-ext-results .apy-ext-title {
   font-weight: 700;
   font-size: 15px;
   color: #00c2a0;
   letter-spacing: 0.01em;
 }
 
-#apy-ext-container .apy-ext-header-btns {
+#apy-ext-results .apy-ext-header-btns {
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
-#apy-ext-container .apy-ext-refresh,
-#apy-ext-container .apy-ext-close {
+#apy-ext-results .apy-ext-refresh,
+#apy-ext-results .apy-ext-close {
   background: none;
   border: none;
   color: #a0aec0;
@@ -132,29 +179,29 @@
   transition: color 0.1s;
 }
 
-#apy-ext-container .apy-ext-refresh:hover {
+#apy-ext-results .apy-ext-refresh:hover {
   color: #00c2a0;
 }
 
-#apy-ext-container .apy-ext-close:hover {
+#apy-ext-results .apy-ext-close:hover {
   color: #e53e3e;
 }
 
 /* ── Date row ──────────────────────────────────────────────── */
-#apy-ext-container .apy-ext-date-row {
+#apy-ext-results .apy-ext-date-row {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 12px;
 }
 
-#apy-ext-container .apy-ext-date-row label {
+#apy-ext-results .apy-ext-date-row label {
   font-size: 12px;
   color: #718096;
   white-space: nowrap;
 }
 
-#apy-ext-container .apy-ext-date-row input[type="date"] {
+#apy-ext-results .apy-ext-date-row input[type="date"] {
   flex: 1;
   padding: 5px 8px;
   border: 1px solid #cbd5e0;
@@ -165,29 +212,29 @@
   min-width: 0;
 }
 
-#apy-ext-container .apy-ext-date-row input[type="date"]:focus {
+#apy-ext-results .apy-ext-date-row input[type="date"]:focus {
   border-color: #00c2a0;
   box-shadow: 0 0 0 2px rgba(0, 194, 160, 0.2);
 }
 
 /* ── Per-market sections (multi-market events) ─────────────── */
-#apy-ext-container .apy-ext-market-section {
+#apy-ext-results .apy-ext-market-section {
   padding-top: 10px;
 }
 
-#apy-ext-container .apy-ext-market-section + .apy-ext-market-section {
+#apy-ext-results .apy-ext-market-section + .apy-ext-market-section {
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid #e2e8f0;
 }
 
 @media (prefers-color-scheme: dark) {
-  #apy-ext-container .apy-ext-market-section + .apy-ext-market-section {
+  #apy-ext-results .apy-ext-market-section + .apy-ext-market-section {
     border-top-color: #2d3748;
   }
 }
 
-#apy-ext-container .apy-ext-section-header {
+#apy-ext-results .apy-ext-section-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -195,7 +242,7 @@
   margin-bottom: 6px;
 }
 
-#apy-ext-container .apy-ext-market-title {
+#apy-ext-results .apy-ext-market-title {
   margin: 0;
   font-size: 12px;
   font-weight: 600;
@@ -204,7 +251,7 @@
   flex: 1;
 }
 
-#apy-ext-container .apy-ext-trash {
+#apy-ext-results .apy-ext-trash {
   background: none;
   border: none;
   cursor: pointer;
@@ -216,24 +263,24 @@
   flex-shrink: 0;
 }
 
-#apy-ext-container .apy-ext-trash:hover {
+#apy-ext-results .apy-ext-trash:hover {
   opacity: 1;
 }
 
 @media (prefers-color-scheme: dark) {
-  #apy-ext-container .apy-ext-market-title {
+  #apy-ext-results .apy-ext-market-title {
     color: #a0aec0;
   }
 }
 
 /* ── Outcomes grid ─────────────────────────────────────────── */
-#apy-ext-container .apy-ext-grid {
+#apy-ext-results .apy-ext-grid {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-#apy-ext-container .apy-ext-row {
+#apy-ext-results .apy-ext-row {
   display: grid;
   grid-template-columns: 3fr 2fr 3fr 2fr;
   align-items: center;
@@ -244,44 +291,44 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  #apy-ext-container .apy-ext-row {
+  #apy-ext-results .apy-ext-row {
     background: #2d3748;
   }
 }
 
-#apy-ext-container .apy-ext-outcome-label {
+#apy-ext-results .apy-ext-outcome-label {
   font-weight: 600;
   font-size: 13px;
 }
 
-#apy-ext-container .apy-ext-price {
+#apy-ext-results .apy-ext-price {
   font-size: 12px;
   color: #718096;
   text-align: right;
 }
 
-#apy-ext-container .apy-ext-apy-value {
+#apy-ext-results .apy-ext-apy-value {
   font-size: 15px;
   font-weight: 700;
   color: #00a98c;
   text-align: right;
 }
 
-#apy-ext-container .apy-ext-days {
+#apy-ext-results .apy-ext-days {
   font-size: 11px;
   color: #a0aec0;
   text-align: right;
 }
 
 /* ── Summary line ──────────────────────────────────────────── */
-#apy-ext-container .apy-ext-summary {
+#apy-ext-results .apy-ext-summary {
   margin: 8px 0 0;
   font-size: 11px;
   color: #a0aec0;
   text-align: center;
 }
 
-#apy-ext-container .apy-ext-no-data {
+#apy-ext-results .apy-ext-no-data {
   font-size: 12px;
   color: #a0aec0;
   text-align: center;
@@ -289,7 +336,7 @@
 }
 
 /* ── Error message ─────────────────────────────────────────── */
-#apy-ext-container .apy-ext-error {
+#apy-ext-results .apy-ext-error {
   margin-top: 8px;
   padding: 7px 10px;
   background: #fff5f5;
@@ -300,7 +347,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  #apy-ext-container .apy-ext-error {
+  #apy-ext-results .apy-ext-error {
     background: #2d1515;
     border-color: #742a2a;
     color: #fc8181;
