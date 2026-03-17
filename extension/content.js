@@ -616,13 +616,47 @@ const PortfolioInjector = (() => {
   let _cache = new Map();       // slug → Promise<marketData>  (de-dupes concurrent fetches)
   const _injected = new WeakSet(); // DOM row nodes already processed
 
+  const STORAGE_KEY = 'apy-ext-portfolio-enabled';
+  const TOGGLE_ID   = 'apy-ext-portfolio-toggle';
+
+  function isEnabled() {
+    return localStorage.getItem(STORAGE_KEY) === 'true';
+  }
+
+  function injectToggle() {
+    if (document.getElementById(TOGGLE_ID)) return;
+    const btn = document.createElement('button');
+    btn.id = TOGGLE_ID;
+    btn.className = 'apy-portfolio-toggle' + (isEnabled() ? ' apy-portfolio-toggle--on' : '');
+    btn.textContent = isEnabled() ? 'APY: On' : 'APY: Off';
+    btn.setAttribute('aria-label', 'Toggle portfolio APY badges');
+
+    btn.addEventListener('click', () => {
+      if (isEnabled()) {
+        localStorage.setItem(STORAGE_KEY, 'false');
+        btn.className = 'apy-portfolio-toggle';
+        btn.textContent = 'APY: Off';
+        document.querySelectorAll('.apy-portfolio-badge').forEach(b => { b.style.display = 'none'; });
+      } else {
+        localStorage.setItem(STORAGE_KEY, 'true');
+        btn.className = 'apy-portfolio-toggle apy-portfolio-toggle--on';
+        btn.textContent = 'APY: On';
+        document.querySelectorAll('.apy-portfolio-badge').forEach(b => { b.style.display = ''; });
+        scan();
+      }
+    });
+
+    document.body.appendChild(btn);
+  }
+
   /**
    * Tries a list of selectors in priority order and returns the first non-empty
    * NodeList whose elements contain an <a href*="/event/">.
    */
   function findRows() {
     const selectors = [
-      '[class*="bg-neutral-25"]',   // Polymarket portfolio position cards (Tailwind)
+      '[class*="lg:min-h-[64px]"]',  // Polymarket portfolio position cards (any background)
+      '[class*="bg-neutral-25"]',    // fallback: neutral background variant
       '[data-testid*="position"]',
       '[data-testid*="row"]',
       '[class*="position"][class*="row"]',
@@ -880,8 +914,9 @@ const PortfolioInjector = (() => {
     }
   }
 
-  /** Scans for new portfolio rows and injects badges. */
+  /** Scans for new portfolio rows and injects badges (no-op when disabled). */
   function scan() {
+    if (!isEnabled()) return;
     const rows = findRows();
     for (const row of rows) {
       if (_injected.has(row)) continue;
@@ -892,12 +927,14 @@ const PortfolioInjector = (() => {
     }
   }
 
-  /** Clears the fetch cache (WeakSet auto-GCs with old DOM nodes). */
+  /** Clears the fetch cache and removes the toggle button. */
   function reset() {
     _cache = new Map();
+    const toggle = document.getElementById(TOGGLE_ID);
+    if (toggle) toggle.remove();
   }
 
-  return { scan, reset };
+  return { scan, reset, injectToggle, isEnabled };
 })();
 
 // ---------------------------------------------------------------------------
@@ -925,8 +962,9 @@ const SPAObserver = (() => {
   let debounceTimer = null;
 
   function onMutation() {
-    // Re-scan portfolio rows on every mutation (WeakSet deduplicates)
+    // Re-scan portfolio rows on every mutation (WeakSet deduplicates; scan() is no-op when disabled)
     if (/\/portfolio/.test(window.location.pathname)) {
+      PortfolioInjector.injectToggle();
       PortfolioInjector.scan();
     }
 
@@ -944,6 +982,7 @@ const SPAObserver = (() => {
         if (/\/event\//.test(pathname)) {
           UIInjector.injectButton();
         } else if (/\/portfolio/.test(pathname)) {
+          PortfolioInjector.injectToggle();
           PortfolioInjector.scan();
         }
       }
@@ -966,6 +1005,7 @@ const SPAObserver = (() => {
   if (/\/event\//.test(pathname)) {
     UIInjector.injectButton();
   } else if (/\/portfolio/.test(pathname)) {
+    PortfolioInjector.injectToggle();
     PortfolioInjector.scan();
   }
   SPAObserver.start();

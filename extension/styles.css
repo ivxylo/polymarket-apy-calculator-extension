@@ -308,6 +308,66 @@
 }
 
 /* ============================================================
+   Portfolio page — APY toggle button
+   ============================================================ */
+
+.apy-portfolio-toggle {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 2147483647;
+  padding: 7px 14px;
+  background: #ffffff;
+  color: #718096;
+  border: 1px solid #cbd5e0;
+  border-radius: 20px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.apy-portfolio-toggle:hover {
+  border-color: #00c2a0;
+  color: #00c2a0;
+}
+
+.apy-portfolio-toggle--on {
+  background: #00c2a0;
+  color: #ffffff;
+  border-color: #00c2a0;
+}
+
+.apy-portfolio-toggle--on:hover {
+  background: #00a98c;
+  border-color: #00a98c;
+  color: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  .apy-portfolio-toggle {
+    background: #1e2535;
+    color: #718096;
+    border-color: #2d3748;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  }
+
+  .apy-portfolio-toggle:hover {
+    border-color: #00c2a0;
+    color: #00c2a0;
+  }
+
+  .apy-portfolio-toggle--on {
+    background: #00c2a0;
+    color: #ffffff;
+    border-color: #00c2a0;
+  }
+}
+
+/* ============================================================
    Portfolio page — inline APY badge
    ============================================================ */
 
