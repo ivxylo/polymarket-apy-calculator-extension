@@ -306,3 +306,134 @@
     color: #fc8181;
   }
 }
+
+/* ============================================================
+   Portfolio page — inline APY badge
+   ============================================================ */
+
+.apy-portfolio-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border: 1px solid #00c2a0;
+  background: rgba(0, 194, 160, 0.12);
+  border-radius: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  white-space: nowrap;
+  vertical-align: middle;
+  margin-left: 8px;
+}
+
+td.apy-portfolio-badge {
+  display: table-cell;
+  padding: 0 8px;
+}
+
+.apy-portfolio-badge__label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #718096;
+}
+
+.apy-portfolio-badge__value {
+  font-size: 13px;
+  font-weight: 700;
+  color: #00a98c;
+}
+
+.apy-portfolio-badge__days {
+  font-size: 10px;
+  font-weight: 400;
+  color: #a0aec0;
+}
+
+/* Editable days span */
+.apy-portfolio-badge__days--editable {
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.apy-portfolio-badge__days--editable:hover {
+  color: #00a98c;
+}
+
+/* Inline date input (replaces days text when editing) */
+.apy-portfolio-badge__dateinput {
+  width: 110px;
+  font-size: 11px;
+  padding: 1px 4px;
+  border: 1px solid #00c2a0;
+  border-radius: 4px;
+  outline: none;
+  background: #fff;
+  color: #1a1a2e;
+}
+
+@media (prefers-color-scheme: dark) {
+  .apy-portfolio-badge__dateinput {
+    background: #1e2535;
+    border-color: #00c2a0;
+    color: #e2e8f0;
+    color-scheme: dark;
+  }
+}
+
+/* Loading state — pulsing opacity */
+.apy-portfolio-badge--loading {
+  animation: apy-badge-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes apy-badge-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+/* Error state */
+.apy-portfolio-badge--error {
+  border-color: #cbd5e0;
+  background: transparent;
+}
+
+.apy-portfolio-badge--error .apy-portfolio-badge__value {
+  color: #a0aec0;
+}
+
+/* Settled state */
+.apy-portfolio-badge--settled .apy-portfolio-badge__value {
+  font-style: italic;
+  color: #a0aec0;
+  font-weight: 400;
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  .apy-portfolio-badge {
+    border-color: #00c2a0;
+    background: rgba(0, 194, 160, 0.1);
+  }
+
+  .apy-portfolio-badge__label {
+    color: #718096;
+  }
+
+  .apy-portfolio-badge__value {
+    color: #00c2a0;
+  }
+
+  .apy-portfolio-badge__days {
+    color: #4a5568;
+  }
+
+  .apy-portfolio-badge--error {
+    border-color: #4a5568;
+  }
+
+  .apy-portfolio-badge--error .apy-portfolio-badge__value,
+  .apy-portfolio-badge--settled .apy-portfolio-badge__value {
+    color: #4a5568;
+  }
+}

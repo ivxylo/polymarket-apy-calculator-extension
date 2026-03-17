@@ -108,19 +108,61 @@ const MarketDataFetcher = (() => {
     let candidate = new Date(`${monthStr} ${day}, ${refYear}`);
     if (isNaN(candidate)) return null;
 
-    // If this candidate is already in the past, try the next year (but never
-    // beyond the event's own end date, which is the hard deadline)
+    // If this candidate is already in the past, try the next year
     if (candidate < today) {
       const nextYear = new Date(`${monthStr} ${day}, ${refYear + 1}`);
-      if (!isNaN(nextYear) && (!eventEndDate || nextYear <= eventEndDate)) {
-        candidate = nextYear;
-      }
+      if (!isNaN(nextYear)) candidate = nextYear;
     }
 
-    // Sanity check: the sub-market date must not exceed the event end date
-    if (eventEndDate && candidate > eventEndDate) return null;
-
     return candidate;
+  }
+
+  /**
+   * Core API fetch logic for a given slug.
+   * Returns { endDate: Date|null, markets: Array } or throws.
+   */
+  async function fetchEventBySlug(slug) {
+    const url = `https://gamma-api.polymarket.com/events?slug=${encodeURIComponent(slug)}`;
+    const response = await window.fetch(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+
+    // The API may return an array; find the first event matching the slug
+    const event = Array.isArray(data)
+      ? data.find(e => e.slug === slug) || data[0]
+      : data;
+
+    if (!event) throw new Error('No matching event in API response');
+
+    const eventEndDate = event.endDate ? new Date(event.endDate) : null;
+
+    // Normalise each market: prefer the market's own API endDate when it
+    // differs from the event-level date.  When they're identical (the API
+    // gave every sub-market the same deadline) try to extract the real
+    // per-market date from the question text instead.
+    const markets = (Array.isArray(event.markets) ? event.markets : []).map(m => {
+      let endDate = m.endDate ? new Date(m.endDate) : eventEndDate;
+
+      // Detect "all markets share the event date" — within 1 day tolerance
+      // to absorb any time-zone rounding in the API response.
+      const sameAsEvent =
+        eventEndDate &&
+        endDate &&
+        Math.abs(endDate - eventEndDate) < 24 * 60 * 60 * 1000;
+
+      // Also try question-parsing when the API date is already in the past
+      // (some events return stale/wrong sub-market dates from the API).
+      const endDateStale = endDate && endDate < new Date();
+
+      if (sameAsEvent || !endDate || endDateStale) {
+        const questionDate = parseDateFromQuestion(m.question, eventEndDate);
+        if (questionDate) endDate = questionDate;
+      }
+
+      return { ...m, endDate };
+    });
+
+    return { endDate: eventEndDate, markets };
   }
 
   /**
@@ -133,43 +175,7 @@ const MarketDataFetcher = (() => {
 
     if (slug) {
       try {
-        const url = `https://gamma-api.polymarket.com/events?slug=${encodeURIComponent(slug)}`;
-        const response = await window.fetch(url);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
-
-        // The API may return an array; find the first event matching the slug
-        const event = Array.isArray(data)
-          ? data.find(e => e.slug === slug) || data[0]
-          : data;
-
-        if (!event) throw new Error('No matching event in API response');
-
-        const eventEndDate = event.endDate ? new Date(event.endDate) : null;
-
-        // Normalise each market: prefer the market's own API endDate when it
-        // differs from the event-level date.  When they're identical (the API
-        // gave every sub-market the same deadline) try to extract the real
-        // per-market date from the question text instead.
-        const markets = (Array.isArray(event.markets) ? event.markets : []).map(m => {
-          let endDate = m.endDate ? new Date(m.endDate) : eventEndDate;
-
-          // Detect "all markets share the event date" — within 1 day tolerance
-          // to absorb any time-zone rounding in the API response.
-          const sameAsEvent =
-            eventEndDate &&
-            endDate &&
-            Math.abs(endDate - eventEndDate) < 24 * 60 * 60 * 1000;
-
-          if (sameAsEvent || !endDate) {
-            const questionDate = parseDateFromQuestion(m.question, eventEndDate);
-            if (questionDate) endDate = questionDate;
-          }
-
-          return { ...m, endDate };
-        });
-
-        return { endDate: eventEndDate, markets };
+        return await fetchEventBySlug(slug);
       } catch (err) {
         console.warn('[APY Ext] Gamma API fetch failed, falling back to DOM scraping:', err.message);
       }
@@ -182,7 +188,15 @@ const MarketDataFetcher = (() => {
     throw new Error('Could not retrieve market data from API or DOM.');
   }
 
-  return { fetch, getSlug };
+  /**
+   * Fetches event data by slug directly (no DOM scraping fallback).
+   * Used by PortfolioInjector.
+   */
+  async function fetchBySlug(slug) {
+    return fetchEventBySlug(slug);
+  }
+
+  return { fetch, fetchBySlug, getSlug };
 })();
 
 // ---------------------------------------------------------------------------
@@ -352,7 +366,7 @@ const UIInjector = (() => {
     makeDraggable(card, header, (pos) => { savedPosition = pos; });
 
     const markets = (marketData.markets.length > 0
-      ? [...marketData.markets]
+      ? marketData.markets.filter(m => !m.closed)
       : [{ endDate: marketData.endDate, outcomePrices: '[]', outcomes: '["Yes","No"]' }]
     ).sort((a, b) => {
       // Sort ascending by settlement date; markets with no date go last
@@ -596,6 +610,297 @@ const UIInjector = (() => {
 })();
 
 // ---------------------------------------------------------------------------
+// PortfolioInjector — inlines APY badges on /portfolio page
+// ---------------------------------------------------------------------------
+const PortfolioInjector = (() => {
+  let _cache = new Map();       // slug → Promise<marketData>  (de-dupes concurrent fetches)
+  const _injected = new WeakSet(); // DOM row nodes already processed
+
+  /**
+   * Tries a list of selectors in priority order and returns the first non-empty
+   * NodeList whose elements contain an <a href*="/event/">.
+   */
+  function findRows() {
+    const selectors = [
+      '[class*="bg-neutral-25"]',   // Polymarket portfolio position cards (Tailwind)
+      '[data-testid*="position"]',
+      '[data-testid*="row"]',
+      '[class*="position"][class*="row"]',
+      '[class*="PositionRow"]',
+      '[class*="positionRow"]',
+      '[class*="portfolio"] [class*="row"]',
+      'table tbody tr',
+    ];
+    for (const sel of selectors) {
+      const nodes = Array.from(document.querySelectorAll(sel));
+      const withEvent = nodes.filter(n => n.querySelector('a[href*="/event/"]'));
+      if (withEvent.length > 0) return withEvent;
+    }
+    return [];
+  }
+
+  /** Extracts event slug from a row's /event/ link. Returns null if not found. */
+  function extractSlugFromRow(row) {
+    const a = row.querySelector('a[href*="/event/"]');
+    if (a) {
+      const m = a.getAttribute('href').match(/\/event\/([^/?#]+)/);
+      if (m) return m[1];
+    }
+    const slugAttr = row.getAttribute('data-slug');
+    return slugAttr || null;
+  }
+
+  /**
+   * Parses a price string into a decimal in (0, 1].
+   * Handles: "65¢", "65%", "$0.65", "0.65", bare integer "65".
+   * Returns null if unparseable or out of range.
+   */
+  function parsePrice(text) {
+    if (!text) return null;
+    const clean = text.replace(/[$¢%\s,]/g, '');
+    const num = parseFloat(clean);
+    if (isNaN(num) || num <= 0) return null;
+    // Values > 1 are treated as percentages (e.g. 65 → 0.65)
+    const price = num > 1 ? num / 100 : num;
+    return price > 0 && price <= 1 ? price : null;
+  }
+
+  /** Finds the average-entry-price element within a row. */
+  function findPriceEl(row) {
+    // Try semantic class names first (non-Tailwind sites)
+    const selectors = [
+      '[class*="avgPrice"]',
+      '[class*="avg-price"]',
+      '[class*="averagePrice"]',
+      '[class*="price"]:not([class*="total"]):not([class*="win"])',
+    ];
+    for (const sel of selectors) {
+      const el = row.querySelector(sel);
+      if (el) return el;
+    }
+    // Fallback: find a leaf element whose text looks like a price (e.g. "18¢", "65%", "$0.65")
+    const all = row.querySelectorAll('*');
+    for (const el of all) {
+      if (el.children.length > 0) continue; // skip non-leaf nodes
+      const text = (el.innerText || el.textContent || '').trim();
+      if (/^\d+[¢%]$|^\$0\.\d+$|^0\.\d+$/.test(text)) return el;
+    }
+    return null;
+  }
+
+  /** Determines if the row text suggests a "Yes" or "No" outcome. */
+  function detectOutcome(row) {
+    const text = (row.innerText || row.textContent || '').toLowerCase();
+    if (/\byes\b/.test(text)) return 'Yes';
+    if (/\bno\b/.test(text)) return 'No';
+    return null;
+  }
+
+  /**
+   * Extracts a title hint from the row's event link text.
+   * Used to match against sub-market question strings.
+   */
+  function extractRowTitle(row) {
+    for (const a of row.querySelectorAll('a[href*="/event/"]')) {
+      const text = (a.innerText || a.textContent || '').trim();
+      if (text.length > 5) return text;
+    }
+    return null;
+  }
+
+  /**
+   * Finds the best-matching market from the API response for a given row.
+   * Prefers title-based matching (sub-market question contains the row title),
+   * falls back to outcome-label matching, then first market.
+   */
+  function findBestMarket(markets, titleHint, outcomeLabel) {
+    if (!markets || markets.length === 0) return null;
+    if (markets.length === 1) return markets[0];
+
+    // Title match: find the sub-market whose question most closely matches the row title
+    if (titleHint) {
+      const hint = titleHint.toLowerCase().replace(/[?!.,]/g, '');
+      let best = null;
+      let bestScore = 0;
+      for (const m of markets) {
+        const q = (m.question || '').toLowerCase().replace(/[?!.,]/g, '');
+        if (q === hint) return m; // exact match
+        // Score by longest common leading substring
+        let score = 0;
+        while (score < hint.length && score < q.length && hint[score] === q[score]) score++;
+        if (score > bestScore) { bestScore = score; best = m; }
+      }
+      // Use title match only if we matched a meaningful prefix (>5 chars)
+      if (best && bestScore > 5) return best;
+    }
+
+    // Outcome match (every sub-market has Yes/No, so this doesn't distinguish them —
+    // only useful when all sub-markets share the same end date anyway)
+    if (outcomeLabel) {
+      const match = markets.find(m => {
+        try {
+          return JSON.parse(m.outcomes || '[]')
+            .some(o => o.toLowerCase() === outcomeLabel.toLowerCase());
+        } catch { return false; }
+      });
+      if (match) return match;
+    }
+
+    return markets[0];
+  }
+
+  /** YYYY-MM-DD string from a Date (local time, matching <input type="date">) */
+  function toLocalDateString(date) {
+    const d = new Date(date);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  /** Creates a badge element in loading state. */
+  function createBadge(slug) {
+    const badge = document.createElement('span');
+    badge.className = 'apy-portfolio-badge apy-portfolio-badge--loading';
+    badge.dataset.apySlug = slug;
+    badge.innerHTML =
+      '<span class="apy-portfolio-badge__label">APY</span>' +
+      '<span class="apy-portfolio-badge__value">…</span>' +
+      '<span class="apy-portfolio-badge__days"></span>';
+    return badge;
+  }
+
+  /**
+   * Attaches an inline date editor to the badge's days span.
+   * Clicking the days text replaces it with a date input; on change/blur it
+   * recalculates APY and restores the text display.
+   */
+  function attachDateEditor(badge, dateStr, price) {
+    const valueEl = badge.querySelector('.apy-portfolio-badge__value');
+    const daysEl  = badge.querySelector('.apy-portfolio-badge__days');
+
+    daysEl.classList.add('apy-portfolio-badge__days--editable');
+    daysEl.title = 'Click to change settlement date';
+
+    daysEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (badge.querySelector('.apy-portfolio-badge__dateinput')) return; // already open
+
+      const input = document.createElement('input');
+      input.type = 'date';
+      input.className = 'apy-portfolio-badge__dateinput';
+      input.value = dateStr;
+
+      valueEl.style.display = 'none';
+      daysEl.style.display  = 'none';
+      badge.appendChild(input);
+      input.focus();
+
+      function apply() {
+        input.remove();
+        valueEl.style.display = '';
+        daysEl.style.display  = '';
+
+        const newDate = input.value ? new Date(input.value) : null;
+        if (newDate && !isNaN(newDate)) {
+          dateStr = input.value; // update closure for next edit
+          const days = APYCalculator.daysUntil(newDate);
+          const apy  = APYCalculator.calculateAPY(price, days);
+          valueEl.textContent = APYCalculator.formatAPY(apy, days);
+          daysEl.textContent  = days > 0 ? `${days}d` : '';
+          badge.classList.remove('apy-portfolio-badge--settled');
+          if (days <= 0) badge.classList.add('apy-portfolio-badge--settled');
+        }
+      }
+
+      input.addEventListener('change', apply);
+      input.addEventListener('blur',   apply);
+    });
+  }
+
+  /** Updates badge with resolved APY data and wires up the date editor. */
+  function setBadgeValue(badge, apy, days, endDate, price) {
+    badge.classList.remove('apy-portfolio-badge--loading');
+    if (days <= 0) badge.classList.add('apy-portfolio-badge--settled');
+    badge.querySelector('.apy-portfolio-badge__value').textContent = APYCalculator.formatAPY(apy, days);
+    badge.querySelector('.apy-portfolio-badge__days').textContent  = days > 0 ? `${days}d` : '';
+    if (endDate && price != null) {
+      attachDateEditor(badge, toLocalDateString(endDate), price);
+    }
+  }
+
+  /** Sets badge to error state. */
+  function setBadgeError(badge, msg) {
+    badge.classList.remove('apy-portfolio-badge--loading');
+    badge.classList.add('apy-portfolio-badge--error');
+    badge.querySelector('.apy-portfolio-badge__value').textContent = '—';
+    badge.title = msg;
+  }
+
+  /** Injects a badge into a row and populates it asynchronously. */
+  async function injectBadge(row, slug) {
+    const priceEl = findPriceEl(row);
+    if (!priceEl) return;
+
+    const price = parsePrice(priceEl.innerText || priceEl.textContent);
+    if (price === null) return;
+
+    const badge = createBadge(slug);
+
+    // Wrap in <td> if row children are table cells
+    const firstChild = row.querySelector(':scope > td, :scope > th');
+    if (firstChild) {
+      const td = document.createElement('td');
+      td.className = 'apy-portfolio-badge';
+      td.appendChild(badge);
+      row.appendChild(td);
+    } else {
+      row.appendChild(badge);
+    }
+
+    try {
+      if (!_cache.has(slug)) {
+        _cache.set(slug, MarketDataFetcher.fetchBySlug(slug));
+      }
+      const marketData = await _cache.get(slug);
+
+      // Match sub-market by row title first, then outcome label
+      const titleHint   = extractRowTitle(row);
+      const outcomeLabel = detectOutcome(row);
+      const market = findBestMarket(marketData.markets, titleHint, outcomeLabel);
+
+      const endDate = (market && market.endDate) || marketData.endDate;
+      if (!endDate) {
+        setBadgeError(badge, 'No settlement date');
+        return;
+      }
+
+      const days = APYCalculator.daysUntil(endDate);
+      const apy  = APYCalculator.calculateAPY(price, days);
+      setBadgeValue(badge, apy, days, endDate, price);
+    } catch (err) {
+      setBadgeError(badge, err.message || 'Failed to load market data');
+    }
+  }
+
+  /** Scans for new portfolio rows and injects badges. */
+  function scan() {
+    const rows = findRows();
+    for (const row of rows) {
+      if (_injected.has(row)) continue;
+      _injected.add(row);
+      const slug = extractSlugFromRow(row);
+      if (!slug) continue;
+      injectBadge(row, slug);
+    }
+  }
+
+  /** Clears the fetch cache (WeakSet auto-GCs with old DOM nodes). */
+  function reset() {
+    _cache = new Map();
+  }
+
+  return { scan, reset };
+})();
+
+// ---------------------------------------------------------------------------
 // Button click handler
 // ---------------------------------------------------------------------------
 async function handleCalculateClick() {
@@ -620,6 +925,11 @@ const SPAObserver = (() => {
   let debounceTimer = null;
 
   function onMutation() {
+    // Re-scan portfolio rows on every mutation (WeakSet deduplicates)
+    if (/\/portfolio/.test(window.location.pathname)) {
+      PortfolioInjector.scan();
+    }
+
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       const newHref = window.location.href;
@@ -629,9 +939,12 @@ const SPAObserver = (() => {
         const old = document.getElementById('apy-ext-container');
         if (old) old.remove();
         UIInjector.reset();
-        // Only inject if we're on an event page
-        if (/\/event\//.test(window.location.pathname)) {
+        PortfolioInjector.reset();
+        const { pathname } = window.location;
+        if (/\/event\//.test(pathname)) {
           UIInjector.injectButton();
+        } else if (/\/portfolio/.test(pathname)) {
+          PortfolioInjector.scan();
         }
       }
     }, 500);
@@ -649,8 +962,11 @@ const SPAObserver = (() => {
 // Entry point
 // ---------------------------------------------------------------------------
 (function init() {
-  if (/\/event\//.test(window.location.pathname)) {
+  const { pathname } = window.location;
+  if (/\/event\//.test(pathname)) {
     UIInjector.injectButton();
+  } else if (/\/portfolio/.test(pathname)) {
+    PortfolioInjector.scan();
   }
   SPAObserver.start();
 })();
