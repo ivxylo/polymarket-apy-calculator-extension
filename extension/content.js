@@ -274,30 +274,52 @@ const UIInjector = (() => {
    * target. We insert the extension card after the first match.
    * Update this list if Polymarket changes its DOM structure.
    */
-  const INJECTION_TARGETS = [
+  // Selectors tried in priority order. The first five are "primary" — stable
+  // React-rendered elements near the trade area. The last two are fallbacks used
+  // only when the page hasn't rendered yet (e.g. during SPA navigation).
+  const PRIMARY_TARGETS = [
     '[class*="buy"]',
     '[class*="trade"]',
     '[class*="orderBook"]',
     '[class*="Order"]',
     '[class*="market-"]',
-    'main',
-    'body',
   ];
+  const FALLBACK_TARGETS = ['main', 'body'];
 
   function findTarget() {
-    for (const selector of INJECTION_TARGETS) {
+    for (const selector of [...PRIMARY_TARGETS, ...FALLBACK_TARGETS]) {
       const el = document.querySelector(selector);
       if (el) return el;
     }
     return document.body;
   }
 
+  /** Returns true if any primary (non-fallback) target exists in the DOM. */
+  function hasPrimaryTarget() {
+    return PRIMARY_TARGETS.some(sel => document.querySelector(sel));
+  }
+
   /**
    * Injects the "Calculate APY" button into the page.
-   * Safe to call multiple times — guards against duplicate injection.
+   * Safe to call repeatedly — if already injected in a fallback position and a
+   * primary target has since rendered, it relocates the button automatically.
    */
   function injectButton() {
-    if (document.getElementById(CONTAINER_ID)) return; // already injected
+    const existing = document.getElementById(CONTAINER_ID);
+    if (existing) {
+      // Relocate if we're sitting in a fallback (main/body) but a primary
+      // target is now available — this fixes the SPA timing issue where the
+      // button is injected before React renders the trade area and then gets
+      // visually buried under Polymarket's subsequently rendered components.
+      const inFallback = FALLBACK_TARGETS.some(
+        sel => existing.parentNode === document.querySelector(sel)
+      );
+      if (inFallback && hasPrimaryTarget()) {
+        existing.remove(); // fall through to re-inject below
+      } else {
+        return; // already in a good position, nothing to do
+      }
+    }
 
     const container = document.createElement('div');
     container.id = CONTAINER_ID;
@@ -1346,10 +1368,20 @@ const SPAObserver = (() => {
   let debounceTimer = null;
 
   function onMutation() {
+    const { pathname } = window.location;
+
     // Re-scan portfolio rows on every mutation (WeakSet deduplicates; scan() is no-op when disabled)
-    if (/\/portfolio/.test(window.location.pathname)) {
+    if (/\/portfolio/.test(pathname)) {
       PortfolioInjector.injectToggle();
       PortfolioInjector.scan();
+    }
+
+    // Re-attempt button injection on every mutation for event pages.
+    // injectButton() is a no-op when already in a good position; it relocates
+    // itself if it previously landed in a fallback and a primary target has
+    // now rendered (handles SPA navigation timing).
+    if (/\/event\//.test(pathname)) {
+      UIInjector.injectButton();
     }
 
     if (debounceTimer) clearTimeout(debounceTimer);
