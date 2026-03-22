@@ -67,10 +67,12 @@ Manages all DOM interaction for event pages. Maintains two pieces of in-memory s
 - Opens at the last dragged position if one is saved; otherwise defaults to `top: 140px, right: 20px` (below Polymarket's sticky header)
 - Draggable by grabbing the header bar; drag position is saved on mouseup
 - Header contains: title, a **↻ refresh** button (re-fetches live prices), and a **✕ close** button
+- For multi-market events, renders a sticky **search bar** at the top of the scroll body; typing filters visible sections by keyword match against each market's `question` (show/hide only — no re-render)
 - For multi-market events, renders one section per open sub-market, sorted ascending by settlement date
 - Each section shows: question title, an editable settlement date input, and a row per outcome with price, APY, and days-to-settlement
 - Each section (on multi-market events) has a **🗑 trash** button that removes it from view for the session
 - Date input is pre-filled from the market's resolved `endDate`; changing it recalculates APY in-place without re-fetching
+- Each price cell is click-to-edit: clicking replaces it with a `[−] [input] [+]` stepper; **−/+** step by 0.05¢ (using `mousedown preventDefault` to prevent input blur); Enter/blur applies, Escape cancels; edited price is stored in a per-market `currentPrices` array so it survives subsequent date changes; **↻** resets all prices to live API values
 
 ### `PortfolioInjector`
 Handles the `/portfolio` page. Inlines a compact APY badge to the right of each open position row, and shows a weighted average APY summary above the toggle.
@@ -125,7 +127,10 @@ Handles the `/portfolio` page. Inlines a compact APY badge to the right of each 
 | Click ↻ | Re-fetches API, re-renders (respects existing trash list) |
 | Click ✕ | Closes popup; position is remembered |
 | Drag header | Moves popup; new position is saved |
-| Change date input | Recalculates APY for that sub-market instantly |
+| Change date input | Recalculates APY for that sub-market instantly (uses current edited prices if any) |
+| Type in search bar | Filters visible sub-markets by keyword; clear to show all |
+| Click price cell | Opens inline stepper `[−] [input] [+]`; edits that outcome's price |
+| −/+ buttons in stepper | Steps price by 0.05¢; APY updates on apply |
 | Click 🗑 on sub-market | Hides that sub-market for the session |
 | Navigate to new event | Full reset — button re-injected, position and trash cleared |
 | Refresh page | Full reset (page reload clears all in-memory state) |

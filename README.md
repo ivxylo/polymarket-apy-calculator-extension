@@ -13,6 +13,8 @@ A Chrome extension that adds APY calculations to Polymarket — both on event pa
 - Supports multi-market events — shows one section per open sub-market, sorted by settlement date; resolved sub-markets are filtered out
 - Floating popup is draggable and remembers its position within the session
 - Settlement date can be overridden per sub-market to model different scenarios
+- Share prices are editable inline — click any price to adjust it and see APY update instantly
+- Multi-market events have a search bar to filter sub-markets by keyword
 
 **Portfolio page** (`/portfolio`)
 - Inlines a compact APY badge next to each open position showing the annualised yield at the **current live market price** (fetched from the Gamma API)
@@ -40,6 +42,8 @@ A Chrome extension that adds APY calculations to Polymarket — both on event pa
    - **🗑** (per sub-market) hides that sub-market for the session
    - Drag the header to reposition the popup
    - Edit the date field under any sub-market to recalculate APY with a custom settlement date
+   - On multi-market events, use the **search bar** at the top to filter sub-markets by keyword
+   - Click any **price** (e.g. `73.0¢`) to edit it inline — use the **−/+** buttons to step by 0.05¢, or type a value directly; APY updates instantly and the edited price is preserved when changing the settlement date
 
 ### Portfolio page
 

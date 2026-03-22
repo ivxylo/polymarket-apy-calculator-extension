@@ -217,6 +217,41 @@
   box-shadow: 0 0 0 2px rgba(0, 194, 160, 0.2);
 }
 
+/* ── Search bar (multi-market events) ─────────────────────── */
+#apy-ext-results .apy-ext-search-wrap {
+  padding: 0 0 10px;
+  position: sticky;
+  top: 0;
+  background: inherit;
+  z-index: 1;
+}
+
+#apy-ext-results .apy-ext-search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 10px;
+  border: 1px solid #cbd5e0;
+  border-radius: 20px;
+  font-size: 12px;
+  outline: none;
+  background: #f7fafc;
+  color: inherit;
+  transition: border-color 0.15s;
+}
+
+#apy-ext-results .apy-ext-search:focus {
+  border-color: #00c2a0;
+  box-shadow: 0 0 0 2px rgba(0, 194, 160, 0.2);
+}
+
+@media (prefers-color-scheme: dark) {
+  #apy-ext-results .apy-ext-search {
+    background: #2d3748;
+    border-color: #4a5568;
+    color: #e2e8f0;
+  }
+}
+
 /* ── Per-market sections (multi-market events) ─────────────── */
 #apy-ext-results .apy-ext-market-section {
   padding-top: 10px;
@@ -305,6 +340,84 @@
   font-size: 12px;
   color: #718096;
   text-align: right;
+}
+
+#apy-ext-results .apy-ext-price--editable {
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+#apy-ext-results .apy-ext-price--editable:hover {
+  color: #00a98c;
+}
+
+#apy-ext-results .apy-ext-price-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+#apy-ext-results .apy-ext-price-input {
+  width: 34px;
+  font-size: 11px;
+  padding: 1px 2px;
+  border: 1px solid #00c2a0;
+  border-radius: 4px;
+  outline: none;
+  background: #fff;
+  color: #1a1a2e;
+  text-align: center;
+  -moz-appearance: textfield;
+}
+
+#apy-ext-results .apy-ext-price-input::-webkit-outer-spin-button,
+#apy-ext-results .apy-ext-price-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+}
+
+#apy-ext-results .apy-ext-price-step {
+  width: 14px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid #cbd5e0;
+  border-radius: 3px;
+  background: #f0f4f8;
+  color: #4a5568;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+#apy-ext-results .apy-ext-price-step:hover {
+  background: #e2e8f0;
+  border-color: #00c2a0;
+  color: #00a98c;
+}
+
+@media (prefers-color-scheme: dark) {
+  #apy-ext-results .apy-ext-price-input {
+    background: #1e2535;
+    color: #e2e8f0;
+    border-color: #00c2a0;
+  }
+
+  #apy-ext-results .apy-ext-price-step {
+    background: #2d3748;
+    border-color: #4a5568;
+    color: #a0aec0;
+  }
+
+  #apy-ext-results .apy-ext-price-step:hover {
+    background: #3d4a5c;
+    border-color: #00c2a0;
+    color: #00c2a0;
+  }
 }
 
 #apy-ext-results .apy-ext-apy-value {

@@ -415,6 +415,20 @@ const UIInjector = (() => {
     // Filter out any markets the user has already trashed this session
     const visibleMarkets = markets.filter(m => !trashedMarkets.has(m.question));
 
+    // Search bar — only for multi-market events
+    let searchInput = null;
+    if (markets.length > 1) {
+      const searchWrap = document.createElement('div');
+      searchWrap.className = 'apy-ext-search-wrap';
+      searchInput = document.createElement('input');
+      searchInput.type = 'text';
+      searchInput.className = 'apy-ext-search';
+      searchInput.placeholder = 'Search markets…';
+      searchWrap.appendChild(searchInput);
+      scrollBody.appendChild(searchWrap);
+    }
+
+    const sectionRefs = [];
     visibleMarkets.forEach((market, idx) => {
       // Parse prices and outcomes for this market
       let prices = [];
@@ -425,6 +439,8 @@ const UIInjector = (() => {
       } catch (e) {
         console.warn(`[APY Ext] Failed to parse market[${idx}] outcomePrices:`, e);
       }
+      // Mutable copy so user-edited prices survive settlement date changes
+      const currentPrices = [...prices];
 
       // Per-market settlement date (falls back to event-level date)
       const settlementDate = market.endDate || fallbackDate;
@@ -477,13 +493,24 @@ const UIInjector = (() => {
       section.appendChild(grid);
 
       scrollBody.appendChild(section);
+      sectionRefs.push({ section, question: market.question || '' });
 
       // Render initial values, then re-render on date change
-      renderMarketAPY(grid, prices, outcomes, dateInput.value);
+      renderMarketAPY(grid, currentPrices, outcomes, dateInput.value);
       dateInput.addEventListener('input', () => {
-        renderMarketAPY(grid, prices, outcomes, dateInput.value);
+        renderMarketAPY(grid, currentPrices, outcomes, dateInput.value);
       });
     });
+
+    // Wire up search filter
+    if (searchInput) {
+      searchInput.addEventListener('input', () => {
+        const q = searchInput.value.trim().toLowerCase();
+        sectionRefs.forEach(({ section, question }) => {
+          section.style.display = (!q || question.toLowerCase().includes(q)) ? '' : 'none';
+        });
+      });
+    }
 
     // Append to body so the card is never trapped inside a stacking context
     document.body.appendChild(card);
@@ -523,13 +550,81 @@ const UIInjector = (() => {
       labelEl.className = 'apy-ext-outcome-label';
       labelEl.textContent = label;
 
-      const priceEl = document.createElement('span');
-      priceEl.className = 'apy-ext-price';
-      priceEl.textContent = `${(price * 100).toFixed(1)}¢`;
-
       const apyEl = document.createElement('span');
       apyEl.className = 'apy-ext-apy-value';
       apyEl.textContent = formatted;
+
+      const priceEl = document.createElement('span');
+      priceEl.className = 'apy-ext-price apy-ext-price--editable';
+      priceEl.textContent = `${(price * 100).toFixed(1)}¢`;
+      priceEl.title = 'Click to adjust price';
+
+      priceEl.addEventListener('click', () => {
+        if (row.querySelector('.apy-ext-price-wrapper')) return;
+
+        const wrapper = document.createElement('span');
+        wrapper.className = 'apy-ext-price-wrapper';
+
+        const minusBtn = document.createElement('button');
+        minusBtn.type = 'button';
+        minusBtn.className = 'apy-ext-price-step';
+        minusBtn.textContent = '−';
+
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.className = 'apy-ext-price-input';
+        input.min = '0.01';
+        input.max = '99.99';
+        input.step = '0.05';
+        input.value = (prices[i] * 100).toFixed(2);
+
+        const plusBtn = document.createElement('button');
+        plusBtn.type = 'button';
+        plusBtn.className = 'apy-ext-price-step';
+        plusBtn.textContent = '+';
+
+        wrapper.appendChild(minusBtn);
+        wrapper.appendChild(input);
+        wrapper.appendChild(plusBtn);
+
+        priceEl.style.display = 'none';
+        row.insertBefore(wrapper, priceEl.nextSibling);
+        input.focus();
+        input.select();
+
+        function apply() {
+          wrapper.remove();
+          priceEl.style.display = '';
+          const raw = parseFloat(input.value);
+          if (!isNaN(raw) && raw > 0 && raw < 100) {
+            const newPrice = raw / 100;
+            prices[i] = newPrice;
+            priceEl.textContent = `${raw.toFixed(2)}¢`;
+            const newApy = APYCalculator.calculateAPY(newPrice, days);
+            apyEl.textContent = APYCalculator.formatAPY(newApy, days);
+          }
+        }
+
+        // Prevent blur when clicking step buttons
+        minusBtn.addEventListener('mousedown', (e) => e.preventDefault());
+        plusBtn.addEventListener('mousedown', (e) => e.preventDefault());
+        minusBtn.addEventListener('click', () => {
+          const val = parseFloat(input.value) || (prices[i] * 100);
+          input.value = Math.max(0.01, +(val - 0.05).toFixed(2));
+          input.focus();
+        });
+        plusBtn.addEventListener('click', () => {
+          const val = parseFloat(input.value) || (prices[i] * 100);
+          input.value = Math.min(99.99, +(val + 0.05).toFixed(2));
+          input.focus();
+        });
+
+        input.addEventListener('blur', apply);
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { input.blur(); }
+          if (e.key === 'Escape') { input.value = (prices[i] * 100).toFixed(2); input.blur(); }
+        });
+      });
 
       const daysEl = document.createElement('span');
       daysEl.className = 'apy-ext-days';
